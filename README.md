@@ -49,10 +49,10 @@ See detailed migration guide in `docs/migration/MIGRATION_GUIDE.md`
 ### Path 3: Restore from Backup
 ```bash
 # Fresh WSL2 install or new PC
-./scripts/fresh-install-restore.sh /path/to/your/backup
+./plex.sh restore /path/to/your/backup
 
 # Example:
-./scripts/fresh-install-restore.sh /mnt/e/Plex/Backups/full_20260217_023537
+./plex.sh restore /mnt/e/Plex/Backups/full_20260217_023537
 ```
 
 ---
@@ -299,10 +299,10 @@ Full guide: See `docs/migration/MIGRATION_GUIDE.md`
 
 ```bash
 # Quick config backup (fast, config only)
-./scripts/backup.sh config
+./plex.sh backup config
 
 # Full backup with database and metadata (compressed)
-./scripts/backup.sh full /mnt/e/Plex/Backups
+./plex.sh backup full /mnt/e/Plex/Backups
 ```
 
 ### What Gets Backed Up?
@@ -350,10 +350,10 @@ flowchart TB
 crontab -e
 
 # Daily config backup at 3 AM
-0 3 * * * cd /opt/plex-service && ./scripts/backup.sh config /mnt/e/Plex/Backups
+0 3 * * * cd /opt/plex-service && ./plex.sh backup config /mnt/e/Plex/Backups
 
 # Weekly full backup on Sundays at 2 AM
-0 2 * * 0 cd /opt/plex-service && ./scripts/backup.sh full /mnt/e/Plex/Backups
+0 2 * * 0 cd /opt/plex-service && ./plex.sh backup full /mnt/e/Plex/Backups
 ```
 
 ### Disaster Recovery
@@ -369,7 +369,7 @@ flowchart LR
     end
     
     subgraph Recovery["ONE COMMAND RECOVERY"]
-        R --> Cmd[./scripts/fresh-install-restore.sh<br/>/path/to/backup]
+        R --> Cmd[./plex.sh restore<br/>/path/to/backup]
     end
     
     subgraph WhatHappens["What Happens Automatically"]
@@ -392,7 +392,7 @@ flowchart LR
 
 ```bash
 # One-command recovery from backup
-./scripts/fresh-install-restore.sh /mnt/e/Plex/Backups/full_20260217_023537
+./plex.sh restore /mnt/e/Plex/Backups/full_20260217_023537
 ```
 
 **Recovery time: ~30 minutes** (vs hours manually)
@@ -481,7 +481,7 @@ docker-compose up -d
 docker-compose logs -f plex
 
 # Backup now
-./scripts/backup.sh full /mnt/e/Plex/Backups
+./plex.sh backup full /mnt/e/Plex/Backups
 
 # Update containers
 docker-compose pull && docker-compose up -d
@@ -498,17 +498,27 @@ docker ps
 plex-wsl-setup/
 ├── .env.example                 # Environment template
 ├── docker-compose.yml           # Container definitions
-├── README.md                    # This file
+├── plex.sh                       # Main management wrapper
+├── README.md                     # This file
 │
 ├── scripts/
-│   ├── backup.sh              # Backup script (config/full)
-│   ├── restore.sh             # Restore from backup
-│   ├── fresh-install-restore.sh # Disaster recovery
+│   ├── backup-restore/
+│   │   ├── backup.sh            # Backup script (config/full)
+│   │   ├── backup-full.sh       # Full backup wrapper
+│   │   └── restore.sh           # Restore from backup
+│   ├── deploy/
+│   │   └── deploy.sh            # Deploy to /opt/plex-service
+│   ├── migrate/
+│   │   └── fresh-install-restore.sh # Disaster recovery
+│   ├── setup/
+│   │   ├── setup.sh             # Initial setup
+│   │   └── verify.sh            # Verify stack
 │   ├── wsl/
-│   │   └── network-setup.sh   # WSL network configuration
+│   │   ├── plex-wsl-startup.sh  # WSL startup network setup
+│   │   └── wsl-network-setup.sh # Network configuration
 │   └── windows/
 │       ├── fix-plex-network.ps1 # Windows network fix
-│       └── bypass-vpn.ps1      # VPN bypass
+│       └── bypass-vpn.ps1       # VPN bypass
 │
 ├── docs/
 │   ├── migration/
