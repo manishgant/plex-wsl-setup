@@ -37,7 +37,8 @@ Commands:
   restore         Restore from backup
   backup [type]   Backup configuration (config|full, default: config)
   backup-full     Full backup (config + database)
-  update          Pull latest images and recreate containers
+  update          Pull latest images and recreate containers (default: backs up config first)
+  update --no-backup    Update without creating backup
   start           Start Plex containers
   stop            Stop Plex containers
   restart         Restart Plex containers
@@ -107,7 +108,22 @@ case "$COMMAND" in
         fi
         ;;
     update)
+        SKIP_BACKUP=false
+        if [[ "$2" == "--no-backup" ]]; then
+            SKIP_BACKUP=true
+        fi
+        
         echo "=== Updating Plex & *arr Stack ==="
+        
+        if [ "$SKIP_BACKUP" = false ]; then
+            echo "Creating backup before update..."
+            ./scripts/backup-restore/backup.sh config
+            echo ""
+        else
+            echo "Skipping backup (--no-backup flag detected)"
+            echo ""
+        fi
+        
         docker compose pull
         docker compose up -d
         echo "=== Update Complete ==="
