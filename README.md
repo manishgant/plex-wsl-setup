@@ -1,4 +1,4 @@
-# Plex WSL2: Complete Media Server Migration & Management
+# Plex WSL: Complete Media Server Installation & Management
 
 Transform your native Windows Plex setup into a powerful, containerized WSL2-based media server stack with automated backups and one-click disaster recovery.
 
@@ -6,7 +6,7 @@ Transform your native Windows Plex setup into a powerful, containerized WSL2-bas
 
 This project provides a **complete migration path** from native Windows Plex to a modern Docker-based setup running on WSL2, with comprehensive backup and restore capabilities.
 
-### Why Migrate from Windows Plex to WSL2?
+### Why Migrate from Windows Plex to WSL?
 
 - **Better Performance**: Linux containers have lower overhead than Windows services
 - **GPU Transcoding**: Full NVIDIA GPU support via WSL2
