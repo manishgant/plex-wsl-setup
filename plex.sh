@@ -37,6 +37,7 @@ Commands:
   restore         Restore from backup
   backup [type]   Backup configuration (config|full, default: config)
   backup-full     Full backup (config + database)
+  update          Pull latest images and recreate containers
   start           Start Plex containers
   stop            Stop Plex containers
   restart         Restart Plex containers
@@ -48,10 +49,11 @@ Examples:
   ./plex.sh setup
   ./plex.sh verify
   ./plex.sh deploy
+  ./plex.sh update
   ./plex.sh migrate
-  ./plex.sh restore /mnt/e/Plex/Backups/backup-latest.tar.gz
+  ./plex.sh restore /path/to/backup.tar.gz
   ./plex.sh backup config
-  ./plex.sh backup full /mnt/e/Plex/Backups
+  ./plex.sh backup full <your backup path>
   ./plex.sh network
   ./plex.sh logs -f
 
@@ -103,6 +105,13 @@ case "$COMMAND" in
         else
             ./scripts/backup-restore/backup-full.sh
         fi
+        ;;
+    update)
+        echo "=== Updating Plex & *arr Stack ==="
+        docker compose pull
+        docker compose up -d
+        echo "=== Update Complete ==="
+        echo "Check logs: ./plex.sh logs"
         ;;
     start)
         echo "=== Starting Plex Containers ==="
