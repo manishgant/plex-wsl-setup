@@ -1,0 +1,14 @@
+.env
+config/plex/transcode/
+config/plex/Library/Application Support/Plex Media Server/Logs/
+config/plex/Library/Application Support/Plex Media Server/Cache/
+config/plex/Library/Application Support/Plex Media Server/Media/
+config/plex/Library/Application Support/Plex Media Server/Metadata/
+*.log
+*.pid
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+backups/

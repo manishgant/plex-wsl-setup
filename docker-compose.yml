@@ -1,0 +1,166 @@
+---
+# Plex Docker Stack for Fedora 43 on WSL2
+# Configs stored in /opt/plex-service/
+# Media files accessed from Windows drive at /mnt/e/Plex/
+
+services:
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    network_mode: host
+    runtime: nvidia
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, video, compute, utility]
+
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+      - VERSION=docker
+      - PLEX_CLAIM=${PLEX_CLAIM_TOKEN}
+      - ADVERTISE_IP=http://YOUR_WINDOWS_IP:32400/
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+
+    volumes:
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+      - /opt/plex-service/config/plex:/config:Z
+      - /mnt/e/Plex:/mnt/e/Plex:Z
+      - /mnt/wsl/transcode:/transcode:Z
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:32400/identity"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tautulli:
+    image: lscr.io/linuxserver/tautulli:latest
+    container_name: tautulli
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    volumes:
+      - /opt/plex-service/config/tautulli:/config:Z
+      - /opt/plex-service/config/plex:/plex_logs:ro,Z
+    restart: unless-stopped
+    depends_on:
+      - plex
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    volumes:
+      - /opt/plex-service/config/sonarr:/config:Z
+      - /mnt/e/Plex:/data:Z
+      - /mnt/e/Plex/Downloads:/downloads:Z
+    restart: unless-stopped
+    depends_on:
+      - prowlarr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989/sonarr/api/v3/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    volumes:
+      - /opt/plex-service/config/radarr:/config:Z
+      - /mnt/e/Plex:/data:Z
+      - /mnt/e/Plex/Downloads:/downloads:Z
+    restart: unless-stopped
+    depends_on:
+      - prowlarr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878/radarr/api/v3/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    volumes:
+      - /opt/plex-service/config/prowlarr:/config:Z
+    restart: unless-stopped
+    depends_on:
+      - flaresolverr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696/prowlarr/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+    volumes:
+      - /opt/plex-service/config/flaresolverr:/config:Z
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  overseerr:
+    image: lscr.io/linuxserver/overseerr:latest
+    container_name: overseerr
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    volumes:
+      - /opt/plex-service/config/overseerr:/config:Z
+    restart: unless-stopped
+    depends_on:
+      - sonarr
+      - radarr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5055/api/v1/status"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+
