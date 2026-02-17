@@ -1,24 +1,26 @@
 #!/bin/bash
 # Plex WSL Backup Script - Configuration and Full Backup Options with Compression
-# Usage: ./backup-config.sh [config|full] [backup_location]
+# Usage: ./scripts/backup.sh [config|full] [backup_location]
 #   config          - Backup only configuration files (fast, small)
 #   full            - Backup config + Plex database + metadata (compressed)
 #   backup_location - Optional: Where to store backups (default: ./backups/)
 #
 # Examples:
-#   ./backup-config.sh config                          # Quick config backup to ./backups/
-#   ./backup-config.sh full                            # Full backup to ./backups/
-#   ./backup-config.sh full /mnt/e/Plex/Backups        # Full backup to external drive
-#   ./backup-config.sh config /media/external/plex     # Backup to external drive
+#   ./scripts/backup.sh config                          # Quick config backup to ./backups/
+#   ./scripts/backup.sh full                            # Full backup to ./backups/
+#   ./scripts/backup.sh full /mnt/e/Plex/Backups        # Full backup to external drive
+#   ./scripts/backup.sh config /media/external/plex     # Backup to external drive
 
 set -e
 
+# Find project root (parent of scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # Parse arguments
 BACKUP_TYPE="${1:-config}"  # Default to config if no argument provided
-BACKUP_DIR="${2:-$SCRIPT_DIR/backups}"  # Default to local ./backups/ if not specified
+BACKUP_DIR="${2:-$PROJECT_ROOT/backups}"  # Default to ./backups/ if not specified
 
 # Compression settings
 TAR_FLAGS="-czf"  # Create gzip compressed archive
