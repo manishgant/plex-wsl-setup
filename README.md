@@ -345,6 +345,27 @@ Backs up everything including database and metadata - slow but complete:
 - **Accessibility:** Access backups from Windows
 - **Space:** Large backups don't fill up WSL disk
 
+### 🚨 Disaster Recovery (Fresh Install from Backup)
+
+**Scenario:** Complete WSL failure, Windows reinstall, or new PC
+
+**One-command recovery:**
+```bash
+# After installing WSL2 and cloning this repo:
+./fresh-install-restore.sh /mnt/e/Plex/Backups/full_20260217_023537
+```
+
+**This script automatically:**
+1. ✅ Checks prerequisites (Docker, WSL2)
+2. ✅ Installs missing dependencies
+3. ✅ Creates directory structure
+4. ✅ Clones template from GitHub
+5. ✅ Restores ALL data from backup
+6. ✅ Shows Windows setup instructions
+7. ✅ Starts all services
+
+**Recovery time: ~30 minutes** (vs hours manually)
+
 **Backup creates this structure:**
 ```
 backups/
