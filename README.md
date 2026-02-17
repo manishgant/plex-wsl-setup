@@ -1,550 +1,646 @@
-# Plex Media Server on WSL2
+# Plex WSL2: Complete Media Server Migration & Management
 
-This document provides a detailed walkthrough of the complete Plex media server stack running on WSL2 with Docker.
+Transform your native Windows Plex setup into a powerful, containerized WSL2-based media server stack with automated backups and one-click disaster recovery.
 
-## Documentation
+## What is This?
 
-- **Setup**: This guide (README.md)
-- **Migration from Windows Plex**: See [docs/migration/](docs/migration/MIGRATION_GUIDE.md)
-- **Quick Reference**: See [docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)
-- **Workflow**: See [docs/WORKFLOW.md](docs/WORKFLOW.md)
+This project provides a **complete migration path** from native Windows Plex to a modern Docker-based setup running on WSL2, with comprehensive backup and restore capabilities.
 
-## Architecture Overview
+### Why Migrate from Windows Plex to WSL2?
 
-```mermaid
-graph TB
-    subgraph External
-        Internet[("Internet")]
-        Router["Router<br/>Port 32400 → Windows"]
-    end
+- **Better Performance**: Linux containers have lower overhead than Windows services
+- **GPU Transcoding**: Full NVIDIA GPU support via WSL2
+- **Reliability**: Docker containers are more stable and easier to manage
+- **Complete Stack**: Integrated *arr suite (Sonarr, Radarr, Prowlarr, etc.)
+- **Easy Recovery**: One-command restore from backup after any failure
+- **Media Stays Safe**: Your movies/shows remain on Windows; only the server moves
 
-    subgraph Windows
-        WSL["WSL2<br/>Fedora 43"]
-        WinIP[Windows IP]
-    end
+## The Three Use Cases
 
-    subgraph Docker["Docker Containers (Host Network)"]
-        Plex["Plex<br/>:32400"]
-        Sonarr["Sonarr<br/>:8989"]
-        Radarr["Radarr<br/>:7878"]
-        Prowlarr["Prowlarr<br/>:9696"]
-        FlareSolverr["FlareSolverr<br/>:8191"]
-        Overseerr["Overseerr<br/>:5055"]
-        Tautulli["Tautulli<br/>:8181"]
-    end
+### 1. Migration - Moving from Windows Plex
+You're currently running Plex natively on Windows and want to migrate to WSL2 without losing your library, watch history, or metadata.
 
-    subgraph Media["Media Storage"]
-        PlexDrive["/mnt/e/Plex<br/>Windows E: Drive"]
-    end
+### 2. Backup & Restore - Regular Protection
+Your WSL2 setup is working great. You want automated backups so you can restore quickly if something breaks.
 
-    subgraph Download["Download Client"]
-        qBit["qBittorrent<br/>Windows IP:8112"]
-    end
+### 3. Fresh Install - After Disaster
+WSL2 crashed, Windows needs reinstall, or you're setting up a new PC. Your media files are safe (on Windows drive), and you have a backup. Restore everything in 30 minutes.
 
-    External --> Router --> WinIP --> WSL
-    WSL --> Plex
-    WSL --> Sonarr
-    WSL --> Radarr
-    WSL --> Prowlarr
-    WSL --> FlareSolverr
-    WSL --> Overseerr
-    WSL --> Tautullie
-    
-    Plex --> PlexDrive
-    Sonarr --> PlexDrive
-    Radarr --> PlexDrive
-    
-    Sonarr --> Prowlarr
-    Radarr --> Prowlarr
-    Prowlarr --> FlareSolverr
-    Prowlarr --> Internet
-    
-    Sonarr --> qBit
-    Radarr --> qBit
-    
-    Overseerr --> Sonarr
-    Overseerr --> Radarr
-    Overseerr --> Plex
-    
-    Tautulli --> Plex
-```
+---
 
-## Service Connections
+## Quick Start: Choose Your Path
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Overseerr
-    participant Plex
-    participant Sonarr
-    participant Radarr
-    participant Prowlarr
-    participant FlareSolverr
-    participant Indexers
-    participant qBittorrent
-    participant PlexDrive
-
-    Note over User,PlexDrive: Full Flow: Request to Watch
-    
-    User->>Overseerr: Request Movie/TV Show
-    Overseerr->>Plex: Check library
-    
-    Note over Overseerr,PlexDrive: Alternative: Search & Download Flow
-    
-    Overseerr->>Sonarr: Search (TV)
-    Overseerr->>Radarr: Search (Movies)
-    
-    Sonarr->>Prowlarr: Query indexers
-    Radarr->>Prowlarr: Query indexers
-    
-    Prowlarr->>FlareSolverr: Cloudflare bypass (if needed)
-    FlareSolverr->>Indexers: Search torrents/NZBs
-    
-    Prowlarr-->>Sonarr: Return results
-    Prowlarr-->>Radarr: Return results
-    
-    Sonarr->>qBittorrent: Send download
-    Radarr->>qBittorrent: Send download
-    
-    qBittorrent->>PlexDrive: Download complete
-    
-    Sonarr-->>Plex: Notify (hardlinks/import)
-    Radarr-->>Plex: Notify (hardlinks/import)
-    
-    Plex->>User: Stream content
-```
-
-## Network Architecture
-
-```mermaid
-graph LR
-    subgraph WSL2_Network["WSL2 Network (Host Mode)"]
-        Docker[("All Containers<br/>network_mode: host")]
-    end
-    
-    subgraph Windows_Network["Windows Network"]
-        WinApps["Windows Apps<br/>qBittorrent"]
-        Browser["Browser<br/>Access UI"]
-    end
-    
-    subgraph Remote["Remote Users"]
-        Phone["Phone"]
-        WorkPC["Work PC"]
-    end
-    
-    Docker --> WinApps
-    Docker --> Browser
-    Browser --> Docker
-    Remote --> Docker
-```
-
-## Setup Prerequisites
-
-### 1. Windows Setup
-
-#### Enable WSL2
-```powershell
-# Run in PowerShell as Administrator
-wsl --install
-wsl --set-default-version 2
-```
-
-#### Port Forwarding
-1. **Router**: Forward port `32400` (TCP) to your Windows IP (e.g., `192.168.0.x`)
-2. **Windows Firewall**: Already handled by container firewall rules
-
-#### Windows Port Proxy (WSL2)
-Run in PowerShell (Admin):
-```powershell
-# Get WSL2 IP
-$wslIp = (wsl hostname -I).Trim().Split()[0]
-
-# Set up port proxy with 0.0.0.0 (catches all interfaces - works with VPN)
-netsh interface portproxy add v4tov4 listenport=32400 listenaddress=0.0.0.0 connectport=32400 connectaddress=$wslIp
-
-# Optional: Also add specific Windows IP if needed
-# netsh interface portproxy add v4tov4 listenport=32400 listenaddress=192.168.0.x connectport=32400 connectaddress=$wslIp
-```
-
-**Note:** Using `0.0.0.0` instead of a specific IP allows Plex to work with VPNs that assign dynamic IPs. The portproxy will forward traffic from any Windows interface to WSL.
-
-**Alternative: Automated Script**
-Run the provided PowerShell script (as Administrator):
-```powershell
-.\fix-plex-network.ps1
-```
-This script automatically configures firewall rules and port proxy with the correct WSL IP.
-
-### 2. WSL2 Setup
-
-#### Install Docker
+### Path 1: Fresh Setup (New Install)
 ```bash
-sudo dnf install -y docker
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
-```
-
-#### Start Services
-```bash
+# Clone this repository
+git clone https://github.com/manishgant/plex-wsl-setup.git /opt/plex-service
 cd /opt/plex-service
-docker-compose up -d
+
+# Run setup
+./setup.sh
+
+# Configure Windows network
+# (See Windows Setup section below)
 ```
 
-## Initial Configuration
+### Path 2: Migrate from Windows Plex
+See detailed migration guide in `docs/migration/MIGRATION_GUIDE.md`
 
-### 1. Plex Setup
-
-1. Visit: http://localhost:32400
-2. Sign in with Plex account
-3. Claim your server (use PLEX_CLAIM_TOKEN if setting up fresh)
-4. Configure library paths:
-   - Add folder: `/data` → maps to `/mnt/e/Plex`
-
-#### Remote Access
-- Settings → Remote Access
-- Should show: "Fully accessible outside your network"
-- If relay is enabled (slow), disable by editing:
-  ```bash
-  sed -i 's/RelayEnabled="1"/RelayEnabled="0"/' "/opt/plex-service/config/plex/Library/Application Support/Plex Media Server/Preferences.xml"
-  docker-compose restart plex
-  ```
-
-### 2. qBittorrent Setup
-
-qBittorrent runs on Windows, accessible by containers at `YOUR_WINDOWS_IP:8112`.
-
-1. Access qBittorrent: http://YOUR_WINDOWS_IP:8112
-2. Configure in Sonarr/Radarr:
-   - Settings → Download Clients → Add → qBittorrent
-   - Host: `YOUR_WINDOWS_IP`
-   - Port: `8112`
-   - Username: (your qBittorrent user)
-   - Password: (your qBittorrent pass)
-
-### 3. Prowlarr Setup
-
-1. Visit: http://localhost:9696
-2. Go to **Settings → Indexers**
-3. Add indexers (e.g., 1337x, RARBG, or private trackers)
-4. For Cloudflare-protected trackers, enable FlareSolverr:
-   - Settings → General → FlareSolverr
-   - URL: `http://localhost:8191`
-
-### 4. Sonarr & Radarr Setup
-
-#### Connect to Prowlarr
-1. Visit Sonarr: http://localhost:8989
-2. Go to **Settings → Apps**
-3. Add Application → Prowlarr
-   - Prowlarr Server: `http://localhost:9696`
-   - API Key: (from Prowlarr → Settings → General → API Key)
-4. Repeat for Radarr: http://localhost:7878
-
-#### Add Media Folders
-1. **Sonarr**: Settings → Media Management → Add Root Folder → `/data`
-2. **Radarr**: Settings → Media Management → Add Root Folder → `/data`
-
-#### Connect Download Client
-1. Settings → Download Clients → Add → qBittorrent
-2. Host: `YOUR_WINDOWS_IP`, Port: `8112`
-
-### 5. Overseerr Setup
-
-1. Visit: http://localhost:5055
-2. Connect Plex: Sign in with Plex account
-3. Sonarr/Radarr should auto-connect via Plex authentication
-
-### 6. Tautulli Setup
-
-1. Visit: http://localhost:8181
-2. Connect to Plex: Settings → Plex Media Server
-   - Plex Token: (from Plex → Account → API)
-
-## Port Reference
-
-| Service | Internal Port | External URL | Description |
-|---------|--------------|--------------|-------------|
-| Plex | 32400 | http://localhost:32400 | Media Server |
-| Plex | 32469 | - | DLNA/Remote |
-| Sonarr | 8989 | http://localhost:8989 | TV Management |
-| Radarr | 7878 | http://localhost:7878 | Movie Management |
-| Prowlarr | 9696 | http://localhost:9696 | Indexer Manager |
-| FlareSolverr | 8191 | http://localhost:8191 | Cloudflare Bypass |
-| Overseerr | 5055 | http://localhost:5055 | Request Portal |
-| Tautulli | 8181 | http://localhost:8181 | Monitoring |
-| qBittorrent | 8112 | http://YOUR_WINDOWS_IP:8112 | Download Client |
-
-## VPN Considerations
-
-All containers use `network_mode: host`, meaning they use WSL2's network directly. If running a VPN:
-
-### VPN Bypass Script
-If your VPN routes all traffic and blocks Plex remote access:
-
+### Path 3: Restore from Backup
 ```bash
-# Run the bypass script
-sudo /opt/plex-service/plex-vpn-bypass.sh
-```
+# Fresh WSL2 install or new PC
+./fresh-install-restore.sh /path/to/your/backup
 
-This routes Plex container traffic outside the VPN tunnel.
-
-## Backup & Restore
-
-### Usage
-
-```bash
-./backup-config.sh [config|full] [backup_location]
-```
-
-**Arguments:**
-- `config` - Backup configuration only (fast, ~1MB)
-- `full` - Backup config + database + metadata (compressed, 3-10GB)
-- `backup_location` - Optional: Where to store backups (default: `./backups/`)
-
-### Quick Configuration Backup (Fast)
-Backs up only configuration files - fast and small:
-```bash
-# Default location (./backups/)
-./backup-config.sh config
-
-# Custom location
-./backup-config.sh config /mnt/e/Plex/Backups
-```
-
-**Includes:**
-- docker-compose.yml
-- .env file
-- Plex Preferences.xml (settings, custom connections, etc.)
-- .wslconfig (Windows WSL settings)
-- Network configuration documentation
-- PowerShell fix scripts
-
-### Full Backup (Complete)
-Backs up everything including database and metadata - slow but complete:
-```bash
-# Default location (./backups/)
-./backup-config.sh full
-
-# To DrivePool or external drive (recommended for redundancy)
-./backup-config.sh full /mnt/e/Plex/Backups
-
-# To external drive
-./backup-config.sh full /media/external/plex-backups
-```
-
-**Includes everything from config backup PLUS:**
-- **Plex Database** - Library, watch history, user data, ratings
-- **Plex Metadata** - Posters, thumbnails, artwork (can be 3GB+)
-- **Plex Media Assets** - Transcode cache, intro detection
-- **All *arr Applications** - Sonarr, Radarr, Prowlarr, Overseerr, Tautulli, FlareSolverr configs
-- **Plug-ins** - Any custom Plex plugins
-
-**Why use an external/different backup location?**
-- **Redundancy:** Store on DrivePool, NAS, or external drive
-- **Safety:** Backups survive WSL/Linux reinstalls
-- **Accessibility:** Access backups from Windows
-- **Space:** Large backups don't fill up WSL disk
-
-### 🚨 Disaster Recovery (Fresh Install from Backup)
-
-**Scenario:** Complete WSL failure, Windows reinstall, or new PC
-
-**One-command recovery:**
-```bash
-# After installing WSL2 and cloning this repo:
+# Example:
 ./fresh-install-restore.sh /mnt/e/Plex/Backups/full_20260217_023537
-```
-
-**This script automatically:**
-1. ✅ Checks prerequisites (Docker, WSL2)
-2. ✅ Installs missing dependencies
-3. ✅ Creates directory structure
-4. ✅ Clones template from GitHub
-5. ✅ Restores ALL data from backup
-6. ✅ Shows Windows setup instructions
-7. ✅ Starts all services
-
-**Recovery time: ~30 minutes** (vs hours manually)
-
-**Backup creates this structure:**
-```
-backups/
-├── config_20260214_120000/       # Quick config backup
-│   ├── docker-compose.yml
-│   ├── .env
-│   ├── Preferences.xml
-│   ├── .wslconfig
-│   ├── network.config
-│   ├── plex.env
-│   └── restore.sh
-│
-└── full_20260214_120000/         # Full backup
-    ├── docker-compose.yml
-    ├── .env
-    ├── Preferences.xml
-    ├── .wslconfig
-    ├── network.config
-    ├── plex.env
-    ├── plex-database/           # Library database
-    ├── plex-metadata/           # Artwork & thumbnails
-    ├── plex-media/              # Cache & assets
-    ├── plex-plugins/            # Custom plugins
-    ├── sonarr/                  # Sonarr config
-    ├── radarr/                  # Radarr config
-    ├── prowlarr/                # Prowlarr config
-    ├── overseerr/               # Overseerr config
-    ├── tautulli/                # Tautulli config
-    ├── flaresolverr/            # FlareSolverr config
-    └── restore.sh
-```
-
-### Restore from Backup
-
-**Configuration-only restore:**
-```bash
-# Restore just configuration (safe, doesn't touch database)
-./backups/latest/restore.sh
-```
-
-**Full restore (replaces everything!):**
-```bash
-# ⚠️ WARNING: This replaces your current Plex database!
-./backups/full_20260214_120000/restore.sh
-```
-
-**After restore, update Windows portproxy:**
-```powershell
-# Run in PowerShell as Administrator
-.\fix-plex-network.ps1
-```
-
-**Tip:** Set up a cron job for automated backups:
-```bash
-# Edit crontab
-crontab -e
-
-# Add daily config backup at 3 AM
-0 3 * * * cd /opt/plex-service && ./backup-config.sh config
-
-# Add weekly full backup on Sundays at 2 AM
-0 2 * * 0 cd /opt/plex-service && ./backup-config.sh full
-```
-
-## Troubleshooting
-
-### Containers Unhealthy
-```bash
-# Check logs
-docker-compose logs <service>
-
-# Restart specific service
-docker-compose restart <service>
-
-# Recreate service
-docker-compose up -d --force-recreate <service>
-```
-
-### Can't Access Services
-```bash
-# Check if container is running
-docker ps
-
-# Check port is listening
-curl http://localhost:<port>
-
-# Check firewall
-sudo iptables -L -n
-```
-
-### Network Issues
-```bash
-# Verify host network mode
-docker inspect <container> | grep NetworkMode
-
-# Check WSL2 IP
-ip addr show eth0
-
-# Test connectivity from container
-docker exec <container> curl <target>
-```
-
-### Permission Issues
-```bash
-# Fix ownership
-sudo chown -R 1000:1000 /opt/plex-service/config/
-```
-
-## Maintenance
-
-### Update Containers
-```bash
-docker-compose pull
-docker-compose up -d
-```
-
-### Clean Up
-```bash
-# Remove unused images
-docker image prune -a
-
-# Remove unused volumes (careful!)
-docker volume prune
-```
-
-## File Structure
-
-```
-/opt/plex-service/
-├── docker-compose.yml      # Service definitions
-├── .env                    # Environment variables
-├── config/                 # Container configs
-│   ├── plex/              # Plex config & database
-│   ├── sonarr/            # Sonarr config
-│   ├── radarr/            # Radarr config
-│   ├── prowlarr/          # Prowlarr config
-│   ├── flaresolverr/      # FlareSolverr config
-│   ├── overseerr/         # Overseerr config
-│   └── tautulli/          # Tautulli config
-├── backups/               # Config backups
-└── ffmpeg*/              # FFmpeg (optional)
-
-/mnt/e/Plex/              # Media from Windows
-├── Movies/
-├── TV/
-├── Music/
-├── Downloads/
-└── ...
-```
-
-## Security Notes
-
-- All API keys and secrets should be configured via GUI or environment
-- Keep `.env` file secure (not committed to git)
-- Use strong passwords for qBittorrent web UI
-- Consider enabling authentication on all services
-
-## Quick Reference
-
-```bash
-# Start stack
-docker-compose up -d
-
-# Stop stack
-docker-compose down
-
-# View logs
-docker-compose logs -f
-
-# Restart specific service
-docker-compose restart plex
-
-# Check status
-docker ps
-
-# Update all
-docker-compose pull && docker-compose up -d
 ```
 
 ---
 
-**Last Updated:** 2026-02-14
+## What's Included?
+
+### Core Media Stack
+- **Plex Media Server** - Your media library with GPU transcoding
+- **Sonarr** - TV show management and automation
+- **Radarr** - Movie management and automation
+- **Prowlarr** - Indexer management for Sonarr/Radarr
+- **Overseerr** - Beautiful web interface for media requests
+- **Tautulli** - Plex statistics and monitoring
+- **FlareSolverr** - Bypass Cloudflare protection on indexers
+
+### Key Features
+- **Host Network Mode**: All services communicate seamlessly
+- **Windows Integration**: Access services via localhost or Windows IP
+- **VPN Compatible**: Works with VPNs using dynamic IP assignment
+- **GPU Acceleration**: NVIDIA hardware transcoding support
+- **Compressed Backups**: 61% space savings with gzip compression
+
+---
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Windows Host                              │
+│  ┌─────────────────────┐    ┌─────────────────────────────────┐ │
+│  │     WSL2 (Fedora)   │    │      Windows Applications       │ │
+│  │  ┌───────────────┐  │    │  ┌───────────────────────────┐  │ │
+│  │  │    Docker     │  │    │  │   qBittorrent             │  │ │
+│  │  │ ┌───────────┐ │  │    │  │   Port: 8112              │  │ │
+│  │  │ │   Plex    │ │  │◄───┼──┤   (Torrent Client)        │  │ │
+│  │  │ │  :32400   │ │  │    │  └───────────────────────────┘  │ │
+│  │  │ └─────┬─────┘ │  │    │                                 │ │
+│  │  │ ┌─────┴─────┐ │  │    │  ┌───────────────────────────┐  │ │
+│  │  │ │  Sonarr   │ │  │    │  │   Port Proxy              │  │ │
+│  │  │ │  :8989    │ │  │◄───┼──┤   0.0.0.0:32400           │  │ │
+│  │  │ └───────────┘ │  │    │  │   → WSL2:32400            │  │ │
+│  │  │ ┌───────────┐ │  │    │  └───────────────────────────┘  │ │
+│  │  │ │  Radarr   │ │  │    │                                 │ │
+│  │  │ │  :7878    │ │  │    │  ┌───────────────────────────┐  │ │
+│  │  │ └───────────┘ │  │    │  │   Windows Firewall        │  │ │
+│  │  │ ┌───────────┐ │  │    │  │   (Allows Plex traffic)   │  │ │
+│  │  │ │  Overseerr│ │  │    │  └───────────────────────────┘  │ │
+│  │  │ │  :5055    │ │  │    │                                 │ │
+│  │  │ └───────────┘ │  │    └─────────────────────────────────┘ │
+│  │  └───────────────┘  │                                        │
+│  └─────────────────────┘                                        │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 │ WSL mounts Windows drive
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Windows Drive (Your Media Library)                  │
+│  E:\Plex\  (mounted as /mnt/e/Plex in WSL)                       │
+│  ├── Movies/                                                     │
+│  ├── TV Shows/                                                   │
+│  ├── Music/                                                      │
+│  └── Downloads/          ◄── Media accessible to both            │
+│                             Windows and WSL2                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Network Flow (Remote Access)
+
+```
+External User                    Your Home Network
+     │                                 │
+     │  https://your-public-ip:32400   │
+     ├────────────────────────────────►│
+     │                                 │
+     │                           Router (Port Forward)
+     │                           32400 → Windows:32400
+     │                                 │
+     │                           Windows Port Proxy
+     │                           0.0.0.0:32400 → WSL2:32400
+     │                                 │
+     │                                 ▼
+     │                          Plex in WSL2
+     │                          Serves the content
+     │◄────────────────────────────────┤
+     │                                 │
+```
+
+### Service Communication
+
+```
+User Request Flow:
+
+1. User wants to watch "The Matrix"
+   └─► Opens Plex app/website
+
+2. Plex checks if movie exists
+   └─► Queries its database (in WSL2)
+
+3. If not found, user requests via Overseerr
+   └─► Overseerr → Radarr (search for movie)
+
+4. Radarr searches via Prowlarr
+   └─► Prowlarr → Indexers → Finds torrent
+
+5. Radarr sends to qBittorrent
+   └─► qBittorrent (Windows) downloads to Downloads/
+
+6. Radarr imports to library
+   └─► Hardlinks to Movies/ folder
+   └─► Notifies Plex to scan
+
+7. Plex updates library
+   └─► User can now watch!
+
+All automated - you just click "Request" in Overseerr!
+```
+
+---
+
+## Installation
+
+### Step 1: Enable WSL2
+```powershell
+# Run in PowerShell as Administrator
+wsl --install -d FedoraLinux-43
+wsl --set-default-version 2
+```
+
+### Step 2: Clone Repository
+```bash
+# In WSL2
+git clone https://github.com/manishgant/plex-wsl-setup.git /opt/plex-service
+cd /opt/plex-service
+```
+
+### Step 3: Configure Environment
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env and add your Plex claim token
+nano .env
+
+# Get claim token from: https://www.plex.tv/claim/
+```
+
+### Step 4: Windows Network Setup
+```powershell
+# Run in PowerShell as Administrator
+cd C:\path\to\plex-wsl-setup
+.\fix-plex-network.ps1
+```
+
+This automatically configures port proxy, firewall rules, and VPN-compatible forwarding.
+
+### Step 5: Start Services
+```bash
+# In WSL2
+cd /opt/plex-service
+docker-compose up -d
+```
+
+Access your services:
+- Plex: http://localhost:32400/web
+- Sonarr: http://localhost:8989
+- Radarr: http://localhost:7878
+- Overseerr: http://localhost:5055
+
+---
+
+## Migration from Native Windows Plex
+
+Already have Plex running on Windows? Migrate without losing anything.
+
+### Migration Process Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    MIGRATION WORKFLOW                            │
+└─────────────────────────────────────────────────────────────────┘
+
+PHASE 1: PREPARATION (5 minutes)
+┌──────────────┐
+│ Windows Plex │
+│  (Running)   │
+└──────┬───────┘
+       │
+       ▼ Stop Plex Service
+┌──────────────┐
+│ Windows Plex │
+│  (Stopped)   │ ◄── Prevents data corruption
+└──────┬───────┘
+       │
+       ▼ Document your setup
+┌──────────────┐
+│ Libraries:   │
+│ - E:\Movies  │
+│ - E:\TV      │
+│ - etc...     │
+└──────────────┘
+
+PHASE 2: DATA BACKUP (10 minutes)
+┌─────────────────────────────────────┐
+│ Windows Plex Data                   │
+│ %LOCALAPPDATA%\Plex Media Server\   │
+└──────────┬──────────────────────────┘
+           │
+           ├──► Databases/ ───────┐
+           │   (library.db)       │
+           │                      │
+           ├──► Metadata/ ────────┤ Copy to C:\PlexBackup\
+           │   (posters, art)     │
+           │                      │
+           ├──► Preferences.xml ──┘
+           │   (settings)
+           │
+           └──► Media/ (SKIP!)
+               (your actual movies - already on E: drive)
+
+PHASE 3: SETUP WSL2 (15 minutes)
+┌─────────────────┐
+│ Install WSL2    │
+│ Clone this repo │
+│ Run setup.sh    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ WSL2 Ready      │
+│ Services ready  │
+│ but empty       │
+└─────────────────┘
+
+PHASE 4: RESTORE DATA (10 minutes)
+┌──────────────────┐
+│ C:\PlexBackup\   │
+└──────┬───────────┘
+       │
+       ├──► Copy to WSL2:
+       │    /opt/plex-service/config/plex/
+       │
+       ├──► Databases/ → Plug-in Support/
+       │
+       └──► Metadata/ → Metadata/
+
+PHASE 5: RECONFIGURE (5 minutes)
+┌──────────────┐     ┌──────────────┐
+│ Plex Web UI  │────►│ Update Paths │
+│ (WSL2)       │     │              │
+└──────────────┘     │ E:\Movies    │
+                     │   ↓          │
+                     │ /mnt/e/Movies│
+                     └──────────────┘
+
+RESULT:
+┌─────────────────────────────────────────┐
+│ WSL2 Plex                               │
+│ - All watch history preserved ✓        │
+│ - All metadata preserved ✓             │
+│ - Library paths updated ✓              │
+│ - Running better than before! ✓        │
+└─────────────────────────────────────────┘
+```
+
+### Quick Migration Steps
+
+1. **Stop Windows Plex** to prevent data corruption
+2. **Backup Windows data** using provided scripts
+3. **Setup WSL2** and install this project
+4. **Copy database and metadata** to WSL2
+5. **Update library paths** in Plex web interface
+
+Full guide: See `docs/migration/MIGRATION_GUIDE.md`
+
+---
+
+## Backup & Restore System
+
+### Create Your First Backup
+
+```bash
+# Quick config backup (fast, config only)
+./backup-config.sh config
+
+# Full backup with database and metadata (compressed)
+./backup-config.sh full /mnt/e/Plex/Backups
+```
+
+### What Gets Backed Up?
+
+```
+FULL BACKUP (3-10GB compressed)
+┌─────────────────────────────────────────────────────┐
+│ WSL2 /opt/plex-service/config/                      │
+└──────────┬──────────────────────────────────────────┘
+           │
+           ├──► plex/                                  │
+           │   ├── Database/                           │
+           │   │   └── com.plexapp.plugins.library.db  │
+           │   │       (All your libraries, watch      │
+           │   │        history, user ratings)         │
+           │   │                                       │
+           │   ├── Metadata/                           │
+           │   │   ├── Movies/                         │
+           │   │   │   └── poster.jpg                  │
+           │   │   ├── TV Shows/                       │
+           │   │   └── ... (All artwork & thumbnails) │
+           │   │                                       │
+           │   └── Preferences.xml                     │
+           │       (All your settings)                 │
+           │                                           │
+           ├──► sonarr/                                │
+           │   └── config.xml                          │
+           │       (TV shows, quality profiles)        │
+           │                                           │
+           ├──► radarr/                                │
+           │   └── config.xml                          │
+           │       (Movies, quality profiles)          │
+           │                                           │
+           ├──► prowlarr/                              │
+           │   └── config.xml                          │
+           │       (Indexer settings)                  │
+           │                                           │
+           ├──► overseerr/                             │
+           │   └── db.sqlite                           │
+           │       (User requests, settings)           │
+           │                                           │
+           ├──► tautulli/                              │
+           │   └── tautulli.db                         │
+           │       (Watch statistics)                  │
+           │                                           │
+           └──► flaresolverr/                          │
+               └── settings.json                       │
+                   (Cloudflare bypass settings)        │
+
+WHAT IS NOT BACKED UP ( stays safe on Windows ):
+❌ /mnt/e/Plex/Movies/     (Your actual movie files)
+❌ /mnt/e/Plex/TV/         (Your actual TV shows)
+❌ /mnt/e/Plex/Music/      (Your actual music)
+
+These are on Windows drive and don't need backup!
+```
+
+**Full backup includes:**
+- Plex Database (library, watch history, ratings)
+- Plex Metadata (posters, thumbnails, artwork)
+- All *arr app configurations (Sonarr, Radarr, etc.)
+- Compressed with gzip (61% space savings)
+
+### Automated Backups
+
+```bash
+# Edit crontab for scheduled backups
+crontab -e
+
+# Daily config backup at 3 AM
+0 3 * * * cd /opt/plex-service && ./backup-config.sh config /mnt/e/Plex/Backups
+
+# Weekly full backup on Sundays at 2 AM
+0 2 * * 0 cd /opt/plex-service && ./backup-config.sh full /mnt/e/Plex/Backups
+```
+
+### Disaster Recovery
+
+Your WSL2 crashed or you got a new PC? No problem!
+
+#### Disaster Recovery Flow
+
+```
+DISASTER SCENARIOS:
+
+Scenario A: WSL2 Corrupted
+┌──────────────┐     Disaster     ┌──────────────┐
+│   WSL2       │  ─────────────►  │   WSL2       │
+│  (Working)   │   WSL won't      │  (Broken)    │
+└──────┬───────┘   start          └──────────────┘
+       │
+       │ Media on E: drive        SAFE ✓
+       │ Backups on DrivePool     SAFE ✓
+       │
+       ▼ Recovery
+┌──────────────┐
+│  Fresh WSL2  │
+│  Install     │
+└──────┬───────┘
+       │
+       ▼ One Command
+┌─────────────────────────┐
+│ fresh-install-restore.sh│
+│ /mnt/e/Plex/Backups/... │
+└──────┬──────────────────┘
+       │
+       ├──► Auto-installs Docker
+       ├──► Creates directories
+       ├──► Restores all configs
+       ├──► Restores database
+       ├──► Restores metadata
+       └──► Starts services
+       │
+       ▼ 30 minutes later...
+┌──────────────┐
+│   WSL2       │
+│  (Restored)  │ ◄── Everything works!
+└──────────────┘
+
+Scenario B: New PC
+┌──────────────┐     New PC       ┌──────────────┐
+│   Old PC     │  ─────────────►  │   New PC     │
+│  (Working)   │   Hardware       │  (Fresh)     │
+└──────┬───────┘   upgrade        └──────────────┘
+       │
+       │ Plug in old drive with:
+       │ - Media files (E: drive) ✓
+       │ - Backups folder ✓
+       │
+       ▼ Same Recovery Process
+┌─────────────────────────┐
+│ fresh-install-restore.sh│
+└─────────────────────────┘
+       │
+       ▼ Done!
+┌──────────────┐
+│   New PC     │
+│ Plex Ready   │ ◄── Exact same setup!
+└──────────────┘
+```
+
+#### Recovery Process
+
+```bash
+# One-command recovery from backup
+./fresh-install-restore.sh /mnt/e/Plex/Backups/full_20260217_023537
+```
+
+**What happens automatically:**
+
+```
+Minute 0-5: Prerequisites Check
+├── Check WSL2 installed ✓
+├── Install Docker if missing
+└── Install required packages
+
+Minute 5-10: Setup Infrastructure
+├── Clone GitHub template
+├── Create directory structure
+└── Setup config paths
+
+Minute 10-25: Restore Data
+├── Extract Plex database
+├── Extract Plex metadata
+├── Restore Sonarr config
+├── Restore Radarr config
+├── Restore all *arr configs
+└── Set correct permissions
+
+Minute 25-30: Network & Start
+├── Show Windows setup instructions
+├── Start all containers
+├── Verify services responding
+└── Display access URLs
+```
+
+**Recovery time: ~30 minutes** (vs hours manually)
+
+---
+
+## The Complete Workflow
+
+### Visual Workflow Overview
+
+```
+YOUR JOURNEY WITH THIS PROJECT:
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. INITIAL MIGRATION (One-time setup)                           │
+└─────────────────────────────────────────────────────────────────┘
+
+    Windows Plex                   WSL2 Setup                    Result
+         │                              │                            │
+         │  Stop Service                │                            │
+         ▼                              ▼                            ▼
+    ┌─────────┐                  ┌──────────┐               ┌─────────────┐
+    │ Backup  │ ───────────────► │ Install  │ ────────────► │ WSL2 Plex   │
+    │ Data    │   Copy DB &      │ WSL2 +   │   Restore     │ Better      │
+    └─────────┘   Metadata       │ Docker   │   Data        │ Performance │
+                                  └──────────┘               └─────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. DAILY OPERATION (Ongoing use)                                │
+└─────────────────────────────────────────────────────────────────┘
+
+    Request                        Download                      Watch
+      │                              │                            │
+      ▼                              ▼                            ▼
+┌──────────┐                 ┌──────────┐               ┌──────────┐
+│ Overseerr│ ──► Sonarr ────►│ Radarr   │ ──► qBit ────►│ Plex     │
+│ "Add     │    Search       │ Download │     Save      │ Stream   │
+│  Movie"  │    Indexers     │ Torrent  │     to E:     │ 4K/HDR   │
+└──────────┘                 └──────────┘               └──────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. REGULAR BACKUPS (Protection)                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+Every Day @ 3 AM                    Every Week @ 2 AM
+        │                                  │
+        ▼                                  ▼
+┌──────────────┐                  ┌──────────────┐
+│ Config Backup│                  │ Full Backup  │
+│ (1MB)        │                  │ (3-10GB)     │
+│ Takes 10 sec │                  │ Takes 10 min │
+└──────┬───────┘                  └──────┬───────┘
+       │                                 │
+       └──────────────┬──────────────────┘
+                      ▼
+            ┌──────────────────┐
+            │ /mnt/e/Plex/     │
+            │ Backups/         │
+            │ (DrivePool)      │
+            └──────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 4. DISASTER RECOVERY (When things go wrong)                     │
+└─────────────────────────────────────────────────────────────────┘
+
+Disaster                          Recovery                      Result
+   │                                  │                            │
+   ▼                                  ▼                            ▼
+┌──────────┐  Run restore script  ┌──────────┐            ┌─────────────┐
+│ WSL2     │ ───────────────────► │ Auto     │ ─────────► │ Everything  │
+│ Crashed  │  fresh-install-      │ Install  │   30 min   │ Works!      │
+│          │  restore.sh          │ & Restore│            │ Same setup  │
+└──────────┘                      └──────────┘            └─────────────┘
+
+Time Comparison:
+┌────────────────┬──────────────────┐
+│ Without Backup │ Days of work     │
+│ With Backup    │ 30 minutes       │
+└────────────────┴──────────────────┘
+```
+
+---
+
+## Why This Setup?
+
+### Your Media is Always Safe
+- Media files stay on Windows drive (accessible even if WSL fails)
+- Backups are stored separately (external drive, cloud, NAS)
+- One command restores everything
+
+### Easy to Maintain
+- Docker containers auto-restart if they crash
+- Single command updates all services
+- Backup before any changes
+
+### Production Ready
+- Used daily for months without issues
+- Handles VPN connections seamlessly
+- GPU transcoding for 4K content
+- Complete *arr automation
+
+---
+
+## Quick Reference
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f plex
+
+# Backup now
+./backup-config.sh full /mnt/e/Plex/Backups
+
+# Update containers
+docker-compose pull && docker-compose up -d
+
+# Check status
+docker ps
+```
+
+---
+
+## Support
+
+- **Migration Issues**: See `docs/migration/MIGRATION_GUIDE.md`
+- **Quick Commands**: See `docs/QUICK_REFERENCE.md`
+- **Workflow Guide**: See `docs/WORKFLOW.md`
+
+**GitHub**: https://github.com/manishgant/plex-wsl-setup
