@@ -37,7 +37,7 @@ git clone https://github.com/manishgant/plex-wsl-setup.git /opt/plex-service
 cd /opt/plex-service
 
 # Run setup
-./setup.sh
+./plex.sh setup
 
 # Configure Windows network
 # (See Windows Setup section below)

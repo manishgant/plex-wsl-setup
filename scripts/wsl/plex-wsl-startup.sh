@@ -1,7 +1,7 @@
 #!/bin/bash
 # Plex WSL Startup Script
 # Run this script every time WSL starts to ensure network is configured
-# Add to .bashrc or .zshrc: source /opt/plex-service/plex-wsl-startup.sh
+# Add to .bashrc or .zshrc: source /opt/plex-service/scripts/plex-wsl-startup.sh
 
 # Get current WSL IP
 WSL_IP=$(ip addr show eth0 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d/ -f1)

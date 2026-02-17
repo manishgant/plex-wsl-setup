@@ -5,7 +5,8 @@
 
 set -e
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEPLOY_DIR="/opt/plex-service"
 BACKUP_DIR="$DEPLOY_DIR/.deploy-backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -39,11 +40,15 @@ echo ""
 # Files to deploy (configuration only, not data)
 DEPLOY_FILES=(
     "docker-compose.yml"
-    "backup-full.sh"
-    "plex-wsl-startup.sh"
-    "wsl-network-setup.sh"
-    "setup.sh"
-    "verify.sh"
+    "plex.sh"
+    "scripts/setup/setup.sh"
+    "scripts/setup/verify.sh"
+    "scripts/backup-restore/backup.sh"
+    "scripts/backup-restore/backup-full.sh"
+    "scripts/backup-restore/restore.sh"
+    "scripts/migrate/fresh-install-restore.sh"
+    "scripts/wsl/plex-wsl-startup.sh"
+    "scripts/wsl/wsl-network-setup.sh"
     "README.md"
     ".env.example"
 )
@@ -67,11 +72,15 @@ done
 
 echo ""
 echo "Setting executable permissions..."
-chmod +x "$DEPLOY_DIR/backup-full.sh" \
-    "$DEPLOY_DIR/plex-wsl-startup.sh" \
-    "$DEPLOY_DIR/wsl-network-setup.sh" \
-    "$DEPLOY_DIR/setup.sh" \
-    "$DEPLOY_DIR/verify.sh" 2>/dev/null || true
+chmod +x "$DEPLOY_DIR/plex.sh" \
+    "$DEPLOY_DIR/scripts/setup/setup.sh" \
+    "$DEPLOY_DIR/scripts/setup/verify.sh" \
+    "$DEPLOY_DIR/scripts/backup-restore/backup.sh" \
+    "$DEPLOY_DIR/scripts/backup-restore/backup-full.sh" \
+    "$DEPLOY_DIR/scripts/backup-restore/restore.sh" \
+    "$DEPLOY_DIR/scripts/migrate/fresh-install-restore.sh" \
+    "$DEPLOY_DIR/scripts/wsl/plex-wsl-startup.sh" \
+    "$DEPLOY_DIR/scripts/wsl/wsl-network-setup.sh" 2>/dev/null || true
 
 echo ""
 echo "Deploying to $DEPLOY_DIR and recreating containers..."

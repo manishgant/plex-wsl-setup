@@ -186,8 +186,8 @@ ls -la ~/plex-migration/
 cd ~/plex-service
 
 # Run setup (creates directories, installs Docker)
-chmod +x setup.sh  # or setup-fedora43.sh for Fedora
-./setup.sh
+chmod +x scripts/setup/setup.sh
+./scripts/setup/setup.sh
 ```
 
 ### 3. Migrate Plex Configuration
