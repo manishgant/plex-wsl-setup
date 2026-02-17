@@ -52,7 +52,7 @@ See detailed migration guide in `docs/migration/MIGRATION_GUIDE.md`
 ./plex.sh restore /path/to/your/backup
 
 # Example:
-./plex.sh restore /mnt/e/Plex/Backups/full_20260217_023537
+./plex.sh restore <your backup path>/<backup_filename>
 ```
 
 ---
@@ -302,7 +302,7 @@ Full guide: See `docs/migration/MIGRATION_GUIDE.md`
 ./plex.sh backup config
 
 # Full backup with database and metadata (compressed)
-./plex.sh backup full /mnt/e/Plex/Backups
+./plex.sh backup full <your backup path>
 ```
 
 ### What Gets Backed Up?
@@ -350,10 +350,10 @@ flowchart TB
 crontab -e
 
 # Daily config backup at 3 AM
-0 3 * * * cd /opt/plex-service && ./plex.sh backup config /mnt/e/Plex/Backups
+0 3 * * * cd /opt/plex-service && ./plex.sh backup config <your backup path>
 
 # Weekly full backup on Sundays at 2 AM
-0 2 * * 0 cd /opt/plex-service && ./plex.sh backup full /mnt/e/Plex/Backups
+0 2 * * 0 cd /opt/plex-service && ./plex.sh backup full <your backup path>
 ```
 
 ### Disaster Recovery
@@ -392,7 +392,7 @@ flowchart LR
 
 ```bash
 # One-command recovery from backup
-./plex.sh restore /mnt/e/Plex/Backups/full_20260217_023537
+./plex.sh restore <your backup path>/<backup_filename>
 ```
 
 **Recovery time: ~30 minutes** (vs hours manually)
@@ -481,7 +481,7 @@ docker-compose up -d
 docker-compose logs -f plex
 
 # Backup now
-./plex.sh backup full /mnt/e/Plex/Backups
+./plex.sh backup full <your backup path>
 
 # Update containers
 docker-compose pull && docker-compose up -d
